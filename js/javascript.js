@@ -8,7 +8,7 @@
 
 const ADHC = (() => {
   // ⚠️ Troque pela URL gerada pelo Railway após o deploy do backend
-  const API_BASE_URL = 'https://backadhc-produtction.up.railway.app';
+  const API_BASE_URL = 'https://backadhc-production.up.railway.app';
   const API_PARTIDAS_URL = `${API_BASE_URL}/api/partidas`;
   const API_LOGIN_ADMIN_URL = `${API_BASE_URL}/api/partidas/login`;
   const STORAGE_PARTIDAS_KEY = 'adhc_partidas';
