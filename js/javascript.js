@@ -7,16 +7,17 @@
  */
 
 const ADHC = (() => {
-  const API_PARTIDAS_URL = '/api/partidas';
-  const API_LOGIN_ADMIN_URL = '/api/partidas/login';
+  // ⚠️ Troque pela URL gerada pelo Railway após o deploy do backend
+  const API_BASE_URL = 'https://backadhc-produtction.up.railway.app';
+  const API_PARTIDAS_URL = `${API_BASE_URL}/api/partidas`;
+  const API_LOGIN_ADMIN_URL = `${API_BASE_URL}/api/partidas/login`;
   const STORAGE_PARTIDAS_KEY = 'adhc_partidas';
   const STORAGE_ADMIN_SESSION_KEY = 'adhc_admin_session';
+  const STORAGE_ADMIN_TOKEN_KEY = 'adhc_admin_token';
   const STORAGE_ACCESS_MODE_KEY = 'adhc_access_mode';
   const STORAGE_NOTICIAS_KEY = 'adhc_noticias_jogos';
   const STORAGE_ELENCO_KEY = 'adhc_elenco_categorias';
   const STORAGE_JOGADORES_KEY = 'adhc_elenco_jogadores';
-  const ADMIN_USERNAME_PADRAO = 'admin';
-  const ADMIN_PASSWORDS_PADRAO = ['adhc2026', 'adhc 2026'];
 
   const ELENCO_PADRAO = [
     {
@@ -351,18 +352,12 @@ const ADHC = (() => {
     }
   }
 
-  function obterHeadersAdmin(credenciaisAdmin) {
+  function obterHeadersComToken() {
+    const token = sessionStorage.getItem(STORAGE_ADMIN_TOKEN_KEY);
     return {
       'Content-Type': 'application/json',
-      'X-Admin-User': credenciaisAdmin?.username || '',
-      'X-Admin-Pass': credenciaisAdmin?.password || ''
+      'Authorization': token ? `Bearer ${token}` : ''
     };
-  }
-
-  function autenticarAdminLocal(credenciaisAdmin) {
-    const username = credenciaisAdmin?.username?.trim();
-    const password = credenciaisAdmin?.password?.trim();
-    return username === ADMIN_USERNAME_PADRAO && ADMIN_PASSWORDS_PADRAO.includes(password);
   }
 
   async function autenticarAdmin(credenciaisAdmin) {
@@ -371,13 +366,23 @@ const ADHC = (() => {
     try {
       const respostaApi = await fetch(API_LOGIN_ADMIN_URL, {
         method: 'POST',
-        headers: obterHeadersAdmin(credenciaisAdmin)
+        headers: {
+          'X-Admin-User': credenciaisAdmin.username,
+          'X-Admin-Pass': credenciaisAdmin.password
+        }
       });
-      if (respostaApi.ok) return true;
-      return autenticarAdminLocal(credenciaisAdmin);
+
+      if (!respostaApi.ok) return false;
+
+      const dados = await respostaApi.json();
+      if (!dados?.token) return false;
+
+      // Salva o token JWT — nunca mais a senha
+      sessionStorage.setItem(STORAGE_ADMIN_TOKEN_KEY, dados.token);
+      return true;
     } catch (erro) {
-      console.warn('Não foi possível autenticar no backend. Usando fallback local.', erro);
-      return autenticarAdminLocal(credenciaisAdmin);
+      console.warn('Não foi possível autenticar no backend.', erro);
+      return false;
     }
   }
 
@@ -385,11 +390,11 @@ function obterUrlAdmin(nomeArquivo) {
     return window.location.pathname.replace(/[^/]+$/, nomeArquivo);
   }
 
-  async function salvarPartidasNoBackend(partidas, credenciaisAdmin) {
+  async function salvarPartidasNoBackend(partidas) {
     try {
       const respostaApi = await fetch(API_PARTIDAS_URL, {
         method: 'PUT',
-        headers: obterHeadersAdmin(credenciaisAdmin),
+        headers: obterHeadersComToken(),
         body: JSON.stringify(partidas)
       });
       if (!respostaApi.ok) throw new Error(`HTTP ${respostaApi.status}`);
@@ -590,15 +595,9 @@ function obterUrlAdmin(nomeArquivo) {
 
   function obterSessaoAdmin() {
     const sessaoSalva = sessionStorage.getItem(STORAGE_ADMIN_SESSION_KEY);
-    if (!sessaoSalva) return null;
-
-    try {
-      const credenciais = JSON.parse(sessaoSalva);
-      if (!credenciais?.username || !credenciais?.password) return null;
-      return credenciais;
-    } catch (erro) {
-      return null;
-    }
+    const token = sessionStorage.getItem(STORAGE_ADMIN_TOKEN_KEY);
+    if (!sessaoSalva || !token) return null;
+    return { autenticado: true };
   }
 
   async function inicializarLoginAdminCalendario() {
@@ -631,7 +630,7 @@ const destino = new URLSearchParams(window.location.search).get('destino');
         return;
       }
 
-      sessionStorage.setItem(STORAGE_ADMIN_SESSION_KEY, JSON.stringify(tentativa));
+      sessionStorage.setItem(STORAGE_ADMIN_SESSION_KEY, 'autenticado');
       window.location.href = obterUrlAdmin(destinoValido);
     });
   }
@@ -707,7 +706,7 @@ function abrirModalAcessoAdmin() {
         return;
       }
 
-      sessionStorage.setItem(STORAGE_ADMIN_SESSION_KEY, JSON.stringify(tentativa));
+      sessionStorage.setItem(STORAGE_ADMIN_SESSION_KEY, 'autenticado');
       sessionStorage.setItem(STORAGE_ACCESS_MODE_KEY, 'admin');
       document.body.removeChild(overlay)
       aplicarPermissoesDeEdicao();
@@ -912,7 +911,7 @@ function abrirModalAcessoAdmin() {
 
       partidas.sort((a, b) => a.date.localeCompare(b.date));
       salvarPartidasNoLocalStorage(partidas);
-      const salvoNoBackend = await salvarPartidasNoBackend(partidas, credenciaisAdmin);
+      const salvoNoBackend = await salvarPartidasNoBackend(partidas);
       nota.textContent = salvoNoBackend
         ? 'Alterações salvas no backend com sucesso.'
         : 'Alterações salvas apenas neste navegador (backend indisponível).';
@@ -938,7 +937,7 @@ function abrirModalAcessoAdmin() {
       if (botao.dataset.action === 'delete') {
         partidas.splice(index, 1);
         salvarPartidasNoLocalStorage(partidas);
-        const salvoNoBackend = await salvarPartidasNoBackend(partidas, credenciaisAdmin);
+        const salvoNoBackend = await salvarPartidasNoBackend(partidas);
         nota.textContent = salvoNoBackend
           ? 'Alterações salvas no backend com sucesso.'
           : 'Alterações salvas apenas neste navegador (backend indisponível).';
@@ -952,7 +951,7 @@ function abrirModalAcessoAdmin() {
       try {
         const respostaApi = await fetch(`${API_PARTIDAS_URL}/reset`, {
           method: 'POST',
-          headers: obterHeadersAdmin(credenciaisAdmin)
+          headers: obterHeadersComToken()
         });
         if (respostaApi.ok) {
           partidas = await respostaApi.json();
@@ -983,6 +982,7 @@ function abrirModalAcessoAdmin() {
 
     logoutButton.addEventListener('click', () => {
       sessionStorage.removeItem(STORAGE_ADMIN_SESSION_KEY);
+      sessionStorage.removeItem(STORAGE_ADMIN_TOKEN_KEY);
       window.location.href = obterUrlAdmin('admin-calendario.html');
     });
 
