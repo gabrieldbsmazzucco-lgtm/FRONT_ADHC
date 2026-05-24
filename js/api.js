@@ -5,7 +5,7 @@
 // Em desenvolvimento local use: http://localhost:8080
 // =====================================================
 
-const API_BASE = 'https://SEU-BACKEND.railway.app';
+const API_BASE = 'backadhc-production.up.railway.app';
 
 // ── Helpers internos ──────────────────────────────────────────────────────
 
